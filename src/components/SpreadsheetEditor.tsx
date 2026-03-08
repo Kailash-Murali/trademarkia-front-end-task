@@ -77,21 +77,22 @@ export function SpreadsheetEditor({ docId }: Props) {
     return subscribeToPresence(docId, setPresenceState);
   }, [docId]);
 
-  // Heartbeat for presence
+  // Heartbeat for presence — cleanup only on unmount
   useEffect(() => {
     if (!user) return;
     const interval = setInterval(() => {
-      setPresence(docId, user.uid, user.displayName, user.color, activeCell);
+      setPresence(docId, user.uid, user.displayName, user.color, activeCellRef.current);
     }, 10_000);
-    // Initial presence
-    setPresence(docId, user.uid, user.displayName, user.color, activeCell);
+    setPresence(docId, user.uid, user.displayName, user.color, activeCellRef.current);
     return () => {
       clearInterval(interval);
       removePresence(docId, user.uid);
     };
-  }, [docId, user, activeCell]);
+  }, [docId, user]);
 
-  // Update presence when active cell changes
+  // Update presence when active cell changes (debounced slightly)
+  const activeCellRef = useRef(activeCell);
+  activeCellRef.current = activeCell;
   useEffect(() => {
     if (!user) return;
     setPresence(docId, user.uid, user.displayName, user.color, activeCell);
@@ -126,29 +127,6 @@ export function SpreadsheetEditor({ docId }: Props) {
     [doc]
   );
 
-  // Cell click
-  const handleCellClick = useCallback(
-    (key: string) => {
-      if (editingCell && editingCell !== key) {
-        commitEdit();
-      }
-      setActiveCell(key);
-    },
-    [editingCell]
-  );
-
-  // Double-click to edit
-  const handleCellDoubleClick = useCallback(
-    (key: string) => {
-      setActiveCell(key);
-      setEditingCell(key);
-      const cell = doc?.grid[key];
-      setEditValue(cell?.formula || cell?.value || "");
-      setTimeout(() => inputRef.current?.focus(), 0);
-    },
-    [doc]
-  );
-
   // Commit edit
   const commitEdit = useCallback(() => {
     if (!editingCell || !doc) return;
@@ -170,6 +148,29 @@ export function SpreadsheetEditor({ docId }: Props) {
     setEditingCell(null);
     setEditValue("");
   }, [editingCell, editValue, docId, doc]);
+
+  // Cell click
+  const handleCellClick = useCallback(
+    (key: string) => {
+      if (editingCell && editingCell !== key) {
+        commitEdit();
+      }
+      setActiveCell(key);
+    },
+    [editingCell, commitEdit]
+  );
+
+  // Double-click to edit
+  const handleCellDoubleClick = useCallback(
+    (key: string) => {
+      setActiveCell(key);
+      setEditingCell(key);
+      const cell = doc?.grid[key];
+      setEditValue(cell?.formula || cell?.value || "");
+      setTimeout(() => inputRef.current?.focus(), 0);
+    },
+    [doc]
+  );
 
   // Key handler for the grid
   const handleKeyDown = useCallback(
