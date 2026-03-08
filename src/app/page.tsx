@@ -1,65 +1,135 @@
-import Image from "next/image";
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useAuth } from "@/contexts/AuthContext";
+import {
+  subscribeToDocuments,
+  createDocument,
+  deleteDocument,
+} from "@/lib/firestore";
+import { SpreadsheetDocument } from "@/lib/types";
+import { Plus, Trash2, FileSpreadsheet, LogOut } from "lucide-react";
+
+export default function DashboardPage() {
+  const { user, loading, signOut } = useAuth();
+  const router = useRouter();
+  const [docs, setDocs] = useState<SpreadsheetDocument[]>([]);
+  const [creating, setCreating] = useState(false);
+
+  useEffect(() => {
+    if (!loading && !user) {
+      router.replace("/login");
+    }
+  }, [user, loading, router]);
+
+  useEffect(() => {
+    if (!user) return;
+    return subscribeToDocuments(setDocs);
+  }, [user]);
+
+  const handleCreate = async () => {
+    if (!user) return;
+    setCreating(true);
+    try {
+      const id = await createDocument("Untitled Spreadsheet", user.uid, user.displayName);
+      router.push(`/doc/${id}`);
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const handleDelete = async (e: React.MouseEvent, docId: string) => {
+    e.stopPropagation();
+    if (!confirm("Delete this document?")) return;
+    await deleteDocument(docId);
+  };
+
+  if (loading || !user) {
+    return (
+      <div className="flex h-screen items-center justify-center">
+        <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
+      </div>
+    );
+  }
+
   return (
-    <div className="flex min-h-screen items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex min-h-screen w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
+    <div className="mx-auto max-w-4xl px-4 py-8">
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">Sheets Lite</h1>
+          <p className="text-sm text-gray-500">
+            Welcome, {user.displayName}
           </p>
         </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+        <div className="flex items-center gap-2">
+          <button
+            onClick={handleCreate}
+            disabled={creating}
+            className="flex items-center gap-1.5 rounded-md bg-black px-3 py-1.5 text-sm font-medium text-white transition hover:bg-gray-800 disabled:opacity-40"
           >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
+            <Plus className="h-4 w-4" />
+            New Sheet
+          </button>
+          <button
+            onClick={signOut}
+            className="flex items-center gap-1.5 rounded-md border border-gray-300 px-3 py-1.5 text-sm text-gray-600 transition hover:bg-gray-50"
           >
-            Documentation
-          </a>
+            <LogOut className="h-4 w-4" />
+          </button>
         </div>
-      </main>
+      </div>
+
+      <div className="mt-8">
+        {docs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center rounded-lg border-2 border-dashed border-gray-200 py-16 text-gray-400">
+            <FileSpreadsheet className="mb-3 h-10 w-10" />
+            <p className="text-sm">No documents yet</p>
+            <button
+              onClick={handleCreate}
+              className="mt-3 text-sm font-medium text-black underline"
+            >
+              Create your first sheet
+            </button>
+          </div>
+        ) : (
+          <div className="divide-y divide-gray-100 rounded-lg border border-gray-200">
+            {docs.map((d) => (
+              <div
+                key={d.id}
+                onClick={() => router.push(`/doc/${d.id}`)}
+                className="flex cursor-pointer items-center justify-between px-4 py-3 transition hover:bg-gray-50"
+              >
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-sm font-medium text-gray-900">
+                    {d.title}
+                  </p>
+                  <p className="text-xs text-gray-400">
+                    {d.ownerName} · {formatDate(d.updatedAt)}
+                  </p>
+                </div>
+                <button
+                  onClick={(e) => handleDelete(e, d.id)}
+                  className="ml-4 rounded p-1 text-gray-300 transition hover:bg-red-50 hover:text-red-500"
+                >
+                  <Trash2 className="h-4 w-4" />
+                </button>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
     </div>
   );
+}
+
+function formatDate(ts: number): string {
+  const d = new Date(ts);
+  const now = new Date();
+  const diff = now.getTime() - d.getTime();
+
+  if (diff < 60_000) return "just now";
+  if (diff < 3600_000) return `${Math.floor(diff / 60_000)}m ago`;
+  if (diff < 86400_000) return `${Math.floor(diff / 3600_000)}h ago`;
+  return d.toLocaleDateString();
 }
