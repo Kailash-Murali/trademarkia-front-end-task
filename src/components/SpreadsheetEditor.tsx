@@ -20,7 +20,6 @@ import {
   PresenceData,
   DEFAULT_COL_WIDTH,
   DEFAULT_ROW_HEIGHT,
-  colIndexToLetter,
   cellId,
   parseCellId,
   CellFormat,

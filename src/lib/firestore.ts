@@ -7,18 +7,12 @@ import {
   onSnapshot,
   query,
   orderBy,
-  serverTimestamp,
-  Timestamp,
-  getDoc,
   getDocs,
-  DocumentData,
-  FieldValue,
 } from "firebase/firestore";
 import { db } from "./firebase";
 import {
   SpreadsheetDocument,
   CellData,
-  Grid,
   DEFAULT_COL_COUNT,
   DEFAULT_ROW_COUNT,
   colIndexToLetter,
@@ -91,8 +85,7 @@ export async function deleteCell(
   docId: string,
   cellKey: string
 ): Promise<void> {
-  // Firestore doesn't have a direct "delete field" with dot notation easily,
-  // so we set it to a deleted marker then handle on read, or use FieldValue
+  // Use dynamic import to get deleteField
   const { deleteField } = await import("firebase/firestore");
   await updateDoc(doc(db, DOCS_COLLECTION, docId), {
     [`grid.${cellKey}`]: deleteField(),
