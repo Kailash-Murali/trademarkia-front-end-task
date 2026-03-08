@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/contexts/AuthContext";
 import { LogIn } from "lucide-react";
@@ -9,19 +9,21 @@ export default function LoginPage() {
   const { user, loading, signInWithGoogle, signInAnon } = useAuth();
   const [name, setName] = useState("");
   const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
   const router = useRouter();
 
-  if (loading) {
+  useEffect(() => {
+    if (!loading && user) {
+      router.replace("/");
+    }
+  }, [user, loading, router]);
+
+  if (loading || user) {
     return (
       <div className="flex h-screen items-center justify-center">
         <div className="h-6 w-6 animate-spin rounded-full border-2 border-gray-300 border-t-black" />
       </div>
     );
-  }
-
-  if (user) {
-    router.replace("/");
-    return null;
   }
 
   const handleAnon = async () => {
@@ -37,9 +39,19 @@ export default function LoginPage() {
 
   const handleGoogle = async () => {
     setBusy(true);
+    setError("");
     try {
       await signInWithGoogle();
       router.replace("/");
+    } catch (err: unknown) {
+      const code = (err as { code?: string })?.code;
+      if (code === "auth/unauthorized-domain") {
+        setError(
+          "This domain is not authorized for Google Sign-In. Please add it to your Firebase project's authorized domains, or sign in as a guest."
+        );
+      } else {
+        setError("Sign-in failed. Please try again.");
+      }
     } finally {
       setBusy(false);
     }
@@ -89,6 +101,10 @@ export default function LoginPage() {
           <LogIn className="h-4 w-4" />
           Sign in with Google
         </button>
+
+        {error && (
+          <p className="text-xs text-red-600 text-center">{error}</p>
+        )}
       </div>
     </div>
   );

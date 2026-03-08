@@ -70,13 +70,26 @@ export async function updateDocumentTitle(
   });
 }
 
+function stripUndefined(obj: Record<string, unknown>): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(obj).filter(([, v]) => v !== undefined)
+  );
+}
+
 export async function updateCell(
   docId: string,
   cellKey: string,
   cellData: CellData
 ): Promise<void> {
+  const clean = stripUndefined({
+    value: cellData.value,
+    formula: cellData.formula,
+    format: cellData.format
+      ? stripUndefined(cellData.format as unknown as Record<string, unknown>)
+      : undefined,
+  });
   await updateDoc(doc(db, DOCS_COLLECTION, docId), {
-    [`grid.${cellKey}`]: cellData,
+    [`grid.${cellKey}`]: clean,
     updatedAt: Date.now(),
   });
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import {
   subscribeToDocument,
@@ -62,6 +62,14 @@ export function SpreadsheetEditor({ docId }: Props) {
 
   const gridRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Refs for stable callbacks (avoids re-renders on every keystroke)
+  const editValueRef = useRef(editValue);
+  editValueRef.current = editValue;
+  const editingCellRef = useRef(editingCell);
+  editingCellRef.current = editingCell;
+  const docRef = useRef(doc);
+  docRef.current = doc;
 
   // Subscribe to document
   useEffect(() => {
@@ -128,13 +136,16 @@ export function SpreadsheetEditor({ docId }: Props) {
 
   // Commit edit
   const commitEdit = useCallback(() => {
-    if (!editingCell || !doc) return;
-    const trimmed = editValue.trim();
+    const currentEditingCell = editingCellRef.current;
+    const currentDoc = docRef.current;
+    const currentEditValue = editValueRef.current;
+    if (!currentEditingCell || !currentDoc) return;
+    const trimmed = currentEditValue.trim();
 
     if (!trimmed) {
-      deleteCell(docId, editingCell);
+      deleteCell(docId, currentEditingCell);
     } else {
-      const existing = doc.grid[editingCell];
+      const existing = currentDoc.grid[currentEditingCell];
       const cellData: CellData = {
         value: isFormula(trimmed) ? "" : trimmed,
         format: existing?.format,
@@ -142,21 +153,21 @@ export function SpreadsheetEditor({ docId }: Props) {
       if (isFormula(trimmed)) {
         cellData.formula = trimmed;
       }
-      updateCell(docId, editingCell, cellData);
+      updateCell(docId, currentEditingCell, cellData);
     }
     setEditingCell(null);
     setEditValue("");
-  }, [editingCell, editValue, docId, doc]);
+  }, [docId]);
 
   // Cell click
   const handleCellClick = useCallback(
     (key: string) => {
-      if (editingCell && editingCell !== key) {
+      if (editingCellRef.current && editingCellRef.current !== key) {
         commitEdit();
       }
       setActiveCell(key);
     },
-    [editingCell, commitEdit]
+    [commitEdit]
   );
 
   // Double-click to edit
@@ -164,29 +175,33 @@ export function SpreadsheetEditor({ docId }: Props) {
     (key: string) => {
       setActiveCell(key);
       setEditingCell(key);
-      const cell = doc?.grid[key];
+      const cell = docRef.current?.grid[key];
       setEditValue(cell?.formula || cell?.value || "");
       setTimeout(() => inputRef.current?.focus(), 0);
     },
-    [doc]
+    []
   );
 
   // Key handler for the grid
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
-      if (!activeCell) return;
-      const parsed = parseCellId(activeCell);
+      const currentActiveCell = activeCellRef.current;
+      if (!currentActiveCell) return;
+      const parsed = parseCellId(currentActiveCell);
       if (!parsed) return;
 
-      const colIdx = columns.indexOf(parsed.col);
+      const currentDoc = docRef.current;
+      const currentColumns = currentDoc?.columnOrder ?? [];
+      const currentRowCount = currentDoc?.rowCount ?? 100;
+      const colIdx = currentColumns.indexOf(parsed.col);
       const row = parsed.row;
 
-      if (editingCell) {
+      if (editingCellRef.current) {
         if (e.key === "Enter") {
           e.preventDefault();
           commitEdit();
           // Move down
-          if (row < rowCount) {
+          if (row < currentRowCount) {
             setActiveCell(cellId(parsed.col, row + 1));
           }
         } else if (e.key === "Escape") {
@@ -196,8 +211,8 @@ export function SpreadsheetEditor({ docId }: Props) {
           e.preventDefault();
           commitEdit();
           const nextCol = e.shiftKey ? colIdx - 1 : colIdx + 1;
-          if (nextCol >= 0 && nextCol < columns.length) {
-            setActiveCell(cellId(columns[nextCol], row));
+          if (nextCol >= 0 && nextCol < currentColumns.length) {
+            setActiveCell(cellId(currentColumns[nextCol], row));
           }
         }
         return;
@@ -207,35 +222,35 @@ export function SpreadsheetEditor({ docId }: Props) {
       if (e.key === "ArrowUp" && row > 1) {
         e.preventDefault();
         setActiveCell(cellId(parsed.col, row - 1));
-      } else if (e.key === "ArrowDown" && row < rowCount) {
+      } else if (e.key === "ArrowDown" && row < currentRowCount) {
         e.preventDefault();
         setActiveCell(cellId(parsed.col, row + 1));
       } else if (e.key === "ArrowLeft" && colIdx > 0) {
         e.preventDefault();
-        setActiveCell(cellId(columns[colIdx - 1], row));
-      } else if (e.key === "ArrowRight" && colIdx < columns.length - 1) {
+        setActiveCell(cellId(currentColumns[colIdx - 1], row));
+      } else if (e.key === "ArrowRight" && colIdx < currentColumns.length - 1) {
         e.preventDefault();
-        setActiveCell(cellId(columns[colIdx + 1], row));
+        setActiveCell(cellId(currentColumns[colIdx + 1], row));
       } else if (e.key === "Tab") {
         e.preventDefault();
         const nextCol = e.shiftKey ? colIdx - 1 : colIdx + 1;
-        if (nextCol >= 0 && nextCol < columns.length) {
-          setActiveCell(cellId(columns[nextCol], row));
+        if (nextCol >= 0 && nextCol < currentColumns.length) {
+          setActiveCell(cellId(currentColumns[nextCol], row));
         }
       } else if (e.key === "Enter") {
         e.preventDefault();
-        handleCellDoubleClick(activeCell);
+        handleCellDoubleClick(currentActiveCell);
       } else if (e.key === "Delete" || e.key === "Backspace") {
         e.preventDefault();
-        deleteCell(docId, activeCell);
+        deleteCell(docId, currentActiveCell);
       } else if (e.key.length === 1 && !e.ctrlKey && !e.metaKey) {
         // Start typing in cell
-        setEditingCell(activeCell);
+        setEditingCell(currentActiveCell);
         setEditValue(e.key);
         setTimeout(() => inputRef.current?.focus(), 0);
       }
     },
-    [activeCell, editingCell, columns, rowCount, commitEdit, handleCellDoubleClick, docId]
+    [commitEdit, handleCellDoubleClick, docId]
   );
 
   // Column drag handlers
@@ -401,16 +416,20 @@ export function SpreadsheetEditor({ docId }: Props) {
   const handleFormulaBarChange = useCallback(
     (value: string) => {
       setEditValue(value);
-      if (activeCell && !editingCell) {
-        setEditingCell(activeCell);
+      if (activeCellRef.current && !editingCellRef.current) {
+        setEditingCell(activeCellRef.current);
       }
     },
-    [activeCell, editingCell]
+    []
   );
 
   const handleFormulaBarCommit = useCallback(() => {
     commitEdit();
   }, [commitEdit]);
+
+  const handleEditValueChange = useCallback((value: string) => {
+    setEditValue(value);
+  }, []);
 
   // Title edit
   const handleTitleDoubleClick = () => {
@@ -485,7 +504,7 @@ export function SpreadsheetEditor({ docId }: Props) {
       {/* Grid */}
       <div
         ref={gridRef}
-        className="grid-container flex-1 overflow-auto"
+        className="grid-container flex-1 overflow-auto caret-transparent outline-none"
         tabIndex={0}
         onKeyDown={handleKeyDown}
       >
@@ -544,54 +563,23 @@ export function SpreadsheetEditor({ docId }: Props) {
                   const presenceUser = presenceMap[key];
 
                   return (
-                    <td
+                    <CellRenderer
                       key={key}
-                      onClick={() => handleCellClick(key)}
-                      onDoubleClick={() => handleCellDoubleClick(key)}
-                      style={{
-                        width: getColWidth(col),
-                        minWidth: getColWidth(col),
-                        height: getRowHeight(row),
-                        borderColor: presenceUser
-                          ? presenceUser.color
-                          : isActive
-                          ? "#2563eb"
-                          : undefined,
-                        borderWidth: presenceUser || isActive ? 2 : 1,
-                      }}
-                      className={cn(
-                        "relative border border-gray-200 px-1 text-sm",
-                        isActive && "z-[1]",
-                        cell?.format?.bold && "font-bold",
-                        cell?.format?.italic && "italic"
-                      )}
-                    >
-                      {isEditing ? (
-                        <input
-                          ref={inputRef}
-                          value={editValue}
-                          onChange={(e) => setEditValue(e.target.value)}
-                          onBlur={commitEdit}
-                          className="absolute inset-0 z-[2] w-full border-none px-1 text-sm outline-none"
-                          style={{ color: cell?.format?.color }}
-                        />
-                      ) : (
-                        <span
-                          className="block truncate"
-                          style={{ color: cell?.format?.color }}
-                        >
-                          {displayValues[key] || ""}
-                        </span>
-                      )}
-                      {presenceUser && (
-                        <span
-                          className="absolute -top-4 left-0 z-10 whitespace-nowrap rounded px-1 text-[10px] text-white"
-                          style={{ backgroundColor: presenceUser.color }}
-                        >
-                          {presenceUser.displayName}
-                        </span>
-                      )}
-                    </td>
+                      cellKey={key}
+                      cell={cell}
+                      displayValue={displayValues[key] || ""}
+                      isActive={isActive}
+                      isEditing={isEditing}
+                      editValue={isEditing ? editValue : ""}
+                      presenceUser={presenceUser}
+                      colWidth={getColWidth(col)}
+                      rowHeight={getRowHeight(row)}
+                      onEditValueChange={handleEditValueChange}
+                      onCommitEdit={commitEdit}
+                      onClick={handleCellClick}
+                      onDoubleClick={handleCellDoubleClick}
+                      inputRef={inputRef}
+                    />
                   );
                 })}
               </tr>
@@ -602,6 +590,91 @@ export function SpreadsheetEditor({ docId }: Props) {
     </div>
   );
 }
+
+/* ─── Memoized cell component ─── */
+interface CellRendererProps {
+  cellKey: string;
+  cell: CellData | undefined;
+  displayValue: string;
+  isActive: boolean;
+  isEditing: boolean;
+  editValue: string;
+  presenceUser: PresenceData | undefined;
+  colWidth: number;
+  rowHeight: number;
+  onEditValueChange: (v: string) => void;
+  onCommitEdit: () => void;
+  onClick: (key: string) => void;
+  onDoubleClick: (key: string) => void;
+  inputRef: React.RefObject<HTMLInputElement | null>;
+}
+
+const CellRenderer = memo(function CellRenderer({
+  cellKey,
+  cell,
+  displayValue,
+  isActive,
+  isEditing,
+  editValue,
+  presenceUser,
+  colWidth,
+  rowHeight,
+  onEditValueChange,
+  onCommitEdit,
+  onClick,
+  onDoubleClick,
+  inputRef,
+}: CellRendererProps) {
+  return (
+    <td
+      onClick={() => onClick(cellKey)}
+      onDoubleClick={() => onDoubleClick(cellKey)}
+      style={{
+        width: colWidth,
+        minWidth: colWidth,
+        height: rowHeight,
+        borderColor: presenceUser
+          ? presenceUser.color
+          : isActive
+          ? "#2563eb"
+          : undefined,
+        borderWidth: presenceUser || isActive ? 2 : 1,
+      }}
+      className={cn(
+        "relative border border-gray-200 px-1 text-sm",
+        isActive && "z-[1]",
+        cell?.format?.bold && "font-bold",
+        cell?.format?.italic && "italic"
+      )}
+    >
+      {isEditing ? (
+        <input
+          ref={inputRef}
+          value={editValue}
+          onChange={(e) => onEditValueChange(e.target.value)}
+          onBlur={onCommitEdit}
+          className="absolute inset-0 z-[2] w-full border-none px-1 text-sm outline-none"
+          style={{ color: cell?.format?.color }}
+        />
+      ) : (
+        <span
+          className="block truncate"
+          style={{ color: cell?.format?.color }}
+        >
+          {displayValue}
+        </span>
+      )}
+      {presenceUser && (
+        <span
+          className="absolute -top-4 left-0 z-10 whitespace-nowrap rounded px-1 text-[10px] text-white"
+          style={{ backgroundColor: presenceUser.color }}
+        >
+          {presenceUser.displayName}
+        </span>
+      )}
+    </td>
+  );
+});
 
 function downloadBlob(content: string, filename: string, mime: string) {
   const blob = new Blob([content], { type: mime });
